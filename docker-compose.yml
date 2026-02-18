@@ -1,0 +1,44 @@
+version: "3.8"
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: pdf2xlsx_backend
+    environment:
+      # Comma-separated origins; empty -> backend will use dev defaults
+      - CORS_ALLOW_ORIGINS=${CORS_ALLOW_ORIGINS:-}
+
+      # runtime dirs inside container
+      - UPLOAD_DIR=/app/uploads
+      - OUTPUT_DIR=/app/outputs
+    volumes:
+      - uploads_data:/app/uploads
+      - outputs_data:/app/outputs
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    restart: unless-stopped
+    networks:
+      - pdf2xlsx_network
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: pdf2xlsx_frontend
+    depends_on:
+      - backend
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+    restart: unless-stopped
+    networks:
+      - pdf2xlsx_network
+
+volumes:
+  uploads_data:
+  outputs_data:
+
+networks:
+  pdf2xlsx_network:
+    driver: bridge

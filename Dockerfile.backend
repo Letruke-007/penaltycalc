@@ -1,0 +1,33 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# System deps:
+# - curl for HEALTHCHECK
+# - gcc occasionally needed for some wheels (safe to keep)
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends \
+       curl gcc \
+       libreoffice-calc libreoffice-writer libreoffice-core \
+       fonts-dejavu fonts-liberation \
+  && rm -rf /var/lib/apt/lists/*
+
+# Install python deps first (cache-friendly)
+COPY backend/requirements.txt /app/backend/requirements.txt
+RUN pip install --no-cache-dir -r /app/backend/requirements.txt
+
+# Copy application code
+COPY backend/app /app/app
+
+# Runtime dirs (mounted volumes in compose)
+ENV UPLOAD_DIR=/app/uploads
+ENV OUTPUT_DIR=/app/outputs
+RUN mkdir -p /app/uploads /app/outputs
+
+EXPOSE 8000
+
+# Healthcheck expects GET /health
+HEALTHCHECK --interval=10s --timeout=3s --retries=6 \
+  CMD curl -fsS http://127.0.0.1:8000/health || exit 1
+
+CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

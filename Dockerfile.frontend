@@ -1,0 +1,28 @@
+FROM node:20-alpine AS builder
+
+WORKDIR /app/frontend
+
+COPY frontend/package.json ./
+COPY frontend/package-lock.json* ./
+COPY frontend/pnpm-lock.yaml* ./
+COPY frontend/yarn.lock* ./
+
+# Install deps (tolerant to lockfile mismatch)
+RUN if [ -f pnpm-lock.yaml ]; then corepack enable && pnpm i; \
+    elif [ -f yarn.lock ]; then corepack enable && yarn install; \
+    else npm install; fi
+
+# Ensure Node typings are present for vite.config.ts / tsconfig.node.json
+RUN if [ -f pnpm-lock.yaml ]; then corepack enable && pnpm add -D @types/node; \
+    elif [ -f yarn.lock ]; then corepack enable && yarn add -D @types/node; \
+    else npm install -D @types/node; fi
+
+COPY frontend/ ./
+
+RUN npm run build
+
+FROM nginx:alpine
+COPY --from=builder /app/frontend/dist /usr/share/nginx/html
+COPY frontend/nginx/default.conf /etc/nginx/conf.d/default.conf
+
+EXPOSE 80
