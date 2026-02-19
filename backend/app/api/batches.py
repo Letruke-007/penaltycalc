@@ -746,22 +746,22 @@ async def download_batch_xlsx(batch_id: str) -> Any:
         raise HTTPException(status_code=404, detail="merged XLSX file missing")
 
     # Filename: follow the same naming policy as per-item download
-    debtor_name = ""
-    calc_date = ""
+    debtor_inn: str | None = None
+    calc_date: str | None = None
     if batch.items:
-        debtor_name = str(batch.items[0].debtor.name or "")
-        calc_date = str(batch.items[0].params.calc_date or "")
+        debtor_inn = str(batch.items[0].debtor.inn or "") or None
+        calc_date = str(batch.items[0].params.calc_date or "") or None
 
     try:
         from app.api.items import _build_download_filename  # type: ignore
 
         out_name = _build_download_filename(
-            debtor_name=debtor_name,
-            contract_number="несколько договоров",
+            debtor_inn=debtor_inn,
             calc_date=calc_date,
         )
     except Exception:
         out_name = "merged.xlsx"
+
 
     return FileResponse(
         path=str(xlsx_path),
@@ -795,7 +795,22 @@ async def download_batch_pdf(batch_id: str) -> Any:
             raise HTTPException(status_code=501, detail=msg)
         raise HTTPException(status_code=500, detail=msg)
 
-    out_name = xlsx_path.with_suffix(".pdf").name
+    # Filename: same policy as XLSX, only different extension
+    debtor_inn: str | None = None
+    calc_date: str | None = None
+    if batch.items:
+        debtor_inn = str(batch.items[0].debtor.inn or "") or None
+        calc_date = str(batch.items[0].params.calc_date or "") or None
+
+    try:
+        from app.api.items import _build_download_filename, _with_pdf_ext  # type: ignore
+
+        out_name = _with_pdf_ext(
+            _build_download_filename(debtor_inn=debtor_inn, calc_date=calc_date)
+        )
+    except Exception:
+        out_name = "merged.pdf"
+
 
     return FileResponse(
         path=str(pdf_path),

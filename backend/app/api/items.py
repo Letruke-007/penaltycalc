@@ -141,34 +141,25 @@ def _sanitize_filename_component(s: str) -> str:
 
 def _build_download_filename(
     *,
-    debtor_name: str,
-    contract_number: str,
+    debtor_inn: str | None,
     calc_date: str | None,
 ) -> str:
-    debtor_name = _sanitize_filename_component(debtor_name)
-    contract_number = (contract_number or "").strip()
+    """Unified (short) filename policy for all downloads.
 
-    multi = False
-    cn_low = contract_number.lower()
-    if "несколь" in cn_low:
-        multi = True
-    if any(sep in contract_number for sep in [",", ";", "\n"]):
-        multi = True
+    Template:
+      "Расчет долга и пени ИНН {inn} на {calc_date}"
 
-    if multi:
-        contract_part = "несколько договоров"
-    else:
-        contract_part = f"договор № {contract_number or '___________'}"
+    We intentionally keep the name short (Windows-friendly) and avoid
+    debtor name / contract number in the filename.
+    """
 
-    date_part = f" на {calc_date}" if calc_date else ""
+    inn_raw = (debtor_inn or "").strip()
+    inn_digits = "".join(ch for ch in inn_raw if ch.isdigit())
+    inn_part = inn_digits or "__________"  # safe fallback
 
-    base = (
-        f"Расчет долга и пени по должнику "
-        f"{debtor_name or '___________'} "
-        f"{contract_part}"
-        f"{date_part}"
-    ).strip()
+    date_part = (calc_date or "").strip() or "__________"  # defensive
 
+    base = f"Расчет долга и пени ИНН {inn_part} на {date_part}".strip()
     return _with_xlsx_ext(base)
 
 
@@ -207,9 +198,8 @@ async def download_item_xlsx(item_id: str) -> Any:
         raise HTTPException(status_code=404, detail="xlsx file missing")
 
     # Prefer naming from produced JSON (source of truth), fallback to inspect preview.
-    debtor_name = ""
-    contract_number = ""
-    calc_date = None
+    debtor_inn: str | None = None
+    calc_date: str | None = None
 
     json_rel = target.get("json_path")
     if json_rel:
@@ -219,23 +209,19 @@ async def download_item_xlsx(item_id: str) -> Any:
                 payload = json.loads(json_path.read_text(encoding="utf-8"))
                 st = payload.get("statement") or {}
                 debtor = st.get("debtor") or {}
-                contract = st.get("contract") or {}
 
-                debtor_name = str(debtor.get("name") or "")
-                contract_number = str(contract.get("number") or "")
-                calc_date = str(st.get("calc_date") or "")
+                debtor_inn = str(debtor.get("inn") or "") or None
+                calc_date = str(st.get("calc_date") or "") or None
             except Exception:
-                debtor_name = ""
-                contract_number = ""
+                debtor_inn = None
                 calc_date = None
 
-    if not debtor_name:
+    if not debtor_inn:
         debtor = target.get("debtor") or {}
-        debtor_name = str(debtor.get("name") or "")
+        debtor_inn = str(debtor.get("inn") or "") or None
 
     out_name = _build_download_filename(
-        debtor_name=debtor_name,
-        contract_number=contract_number,
+        debtor_inn=debtor_inn,
         calc_date=calc_date,
     )
 
@@ -282,8 +268,7 @@ async def download_item_pdf(item_id: str) -> Any:
         raise HTTPException(status_code=404, detail="xlsx file missing")
 
     # Prefer naming from produced JSON (source of truth), fallback to inspect preview.
-    debtor_name = ""
-    contract_number = ""
+    debtor_inn: str | None = None
     calc_date: str | None = None
 
     json_rel = target.get("json_path")
@@ -294,23 +279,19 @@ async def download_item_pdf(item_id: str) -> Any:
                 payload = json.loads(json_path.read_text(encoding="utf-8"))
                 st = payload.get("statement") or {}
                 debtor = st.get("debtor") or {}
-                contract = st.get("contract") or {}
 
-                debtor_name = str(debtor.get("name") or "")
-                contract_number = str(contract.get("number") or "")
+                debtor_inn = str(debtor.get("inn") or "") or None
                 calc_date = str(st.get("calc_date") or "") or None
             except Exception:
-                debtor_name = ""
-                contract_number = ""
+                debtor_inn = None
                 calc_date = None
 
-    if not debtor_name:
+    if not debtor_inn:
         debtor = target.get("debtor") or {}
-        debtor_name = str(debtor.get("name") or "")
+        debtor_inn = str(debtor.get("inn") or "") or None
 
     base_name_xlsx = _build_download_filename(
-        debtor_name=debtor_name,
-        contract_number=contract_number,
+        debtor_inn=debtor_inn,
         calc_date=calc_date,
     )
     out_name_pdf = _with_pdf_ext(base_name_xlsx)
