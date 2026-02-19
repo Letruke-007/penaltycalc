@@ -691,8 +691,12 @@ def _render_calc_rows_g_h_k_i(
         else:
             set_cell(ws, f"K{r}", None, size=10, h="center", v="center")
 
-        # L: formula text (from calc_rows)
-        set_cell(ws, f"L{r}", row.formula_text or "", size=10, h="center", v="center")
+        # L: formula text
+        # In template this is a human-readable reference to columns:
+        #   (6) Debt * (9) Days * (10) Key rate * (11) Fraction
+        # Historically заполнено даже при K=0 (неустойка=0), если есть период просрочки.
+        formula_txt = row.formula_text or ("6 * 9 * 10 * 11" if (has_overdue and row.fraction is not None) else "")
+        set_cell(ws, f"L{r}", formula_txt, size=10, h="center", v="center")
 
         # M: penalty
         has_penalty = bool(has_overdue and row.fraction is not None)
