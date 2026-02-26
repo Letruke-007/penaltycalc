@@ -41,7 +41,12 @@ def money_to_str(s: str) -> str:
         raise ValueError(f"money_to_str: not a money token: {txt!r}")
 
     sign = "-" if m.group("sign") else ""
-    int_part = (m.group("int") or "").replace(" ", "").replace("\u00A0", "").replace("\u202F", "")
+    int_part = (
+        (m.group("int") or "")
+        .replace(" ", "")
+        .replace("\u00a0", "")
+        .replace("\u202f", "")
+    )
     frac = m.group("frac")
     if frac is None:
         frac = "00"
@@ -143,7 +148,11 @@ def _try_money_values(ln: str) -> List[str]:
             d = Decimal(s)
         except Exception:
             continue
-        if re.fullmatch(r"\d{1,2}", token) and d == d.to_integral() and Decimal("0") < abs(d) < Decimal("9"):
+        if (
+            re.fullmatch(r"\d{1,2}", token)
+            and d == d.to_integral()
+            and Decimal("0") < abs(d) < Decimal("9")
+        ):
             continue
         out.append(s)
     return out
@@ -155,6 +164,7 @@ def _month_end_date(period_mmYYYY: str) -> str:
     y = int(yyyy)
     last_day = calendar.monthrange(y, m)[1]
     return f"{last_day:02d}.{m:02d}.{y}"
+
 
 # ---------------------------
 # Patterns
@@ -219,6 +229,7 @@ _TOTAL_HDR_RE = re.compile(r"^ИТОГО ПО ПЕРИОДУ\b", re.IGNORECASE)
 # Main
 # ---------------------------
 
+
 def _money_only_line_value(ln: str) -> Optional[str]:
     """
     Return normalized money string if the line contains exactly ONE money token
@@ -239,11 +250,10 @@ def _money_only_line_value(ln: str) -> Optional[str]:
 
     # If after removing money tokens only whitespace remains -> "money-only line"
     rest = _MONEY_TOKEN_RE.sub("", ln)
-    rest = rest.replace(" ", "").replace("\u00A0", "").replace("\u202F", "")
+    rest = rest.replace(" ", "").replace("\u00a0", "").replace("\u202f", "")
     if rest == "":
         return vals[0]
     return None
-
 
 
 def _premerge_table_tokens(lines: List[str]) -> List[str]:
@@ -287,7 +297,9 @@ def _premerge_table_tokens(lines: List[str]) -> List[str]:
         # Merge (date|period) + money
         j, nxt = _next_nonempty(i + 1)
         if nxt is not None:
-            if (_DATE_RE.match(s) or _PERIOD_RE.match(s)) and _money_only_line_value(nxt) is not None:
+            if (_DATE_RE.match(s) or _PERIOD_RE.match(s)) and _money_only_line_value(
+                nxt
+            ) is not None:
                 out.append(f"{s} {nxt}")
                 i = j + 1
                 continue
@@ -314,6 +326,7 @@ def _premerge_table_tokens(lines: List[str]) -> List[str]:
         i += 1
 
     return out
+
 
 def parse_tables(lines: List[str]) -> Tuple[List[Dict], List[Dict]]:
     """
@@ -406,7 +419,7 @@ def parse_tables(lines: List[str]) -> Tuple[List[Dict], List[Dict]]:
 
     # candidates captured as "standalone money values" inside each month block
     month_money_candidates: Dict[str, List[Decimal]] = {}
-    
+
     month_money_groups: Dict[str, List[List[Decimal]]] = {}
 
     # resolved month totals (final):
@@ -423,8 +436,9 @@ def parse_tables(lines: List[str]) -> Tuple[List[Dict], List[Dict]]:
         # By design, call only when current_month exists
         if not current_month:
             raise ValueError("internal: _add_payment called without current_month")
-        month_payments_sum[current_month] = month_payments_sum.get(current_month, Decimal("0.00")) + amount
-
+        month_payments_sum[current_month] = (
+            month_payments_sum.get(current_month, Decimal("0.00")) + amount
+        )
 
     def _effective_paid_sum_for_month(month: str) -> Decimal:
         """
@@ -475,9 +489,13 @@ def parse_tables(lines: List[str]) -> Tuple[List[Dict], List[Dict]]:
             raise ValueError("internal: _add_posting called without current_month")
 
         if period_mmYYYY == current_month:
-            month_base_posting[current_month] = month_base_posting.get(current_month, Decimal("0.00")) + amount
+            month_base_posting[current_month] = (
+                month_base_posting.get(current_month, Decimal("0.00")) + amount
+            )
         else:
-            month_corr_sum[current_month] = month_corr_sum.get(current_month, Decimal("0.00")) + amount
+            month_corr_sum[current_month] = (
+                month_corr_sum.get(current_month, Decimal("0.00")) + amount
+            )
 
     def _finalize_month(prev_month: Optional[str]) -> None:
         if not prev_month:
@@ -515,7 +533,7 @@ def parse_tables(lines: List[str]) -> Tuple[List[Dict], List[Dict]]:
                     "block_total_candidates": [str(x) for x in uniq[:50]],
                 },
             )
-        
+
         charged_total = sorted(charged_matches)[0]
         month_total_charged[prev_month] = charged_total
 
@@ -526,7 +544,6 @@ def parse_tables(lines: List[str]) -> Tuple[List[Dict], List[Dict]]:
         # Dated payment rows (paid sum) may be incomplete in some PDFs.
         paid_total: Optional[Decimal] = None
         debt_total: Optional[Decimal] = None
-
 
         # A1 guard (format variant):
         # Some statements print month tail as:
@@ -553,7 +570,11 @@ def parse_tables(lines: List[str]) -> Tuple[List[Dict], List[Dict]]:
         for g in groups:
             if len(g) == 3 and _close(g[0], charged_total):
                 # A1: skip synthetic triple [charged, charged, 0.00] if explicit pair [charged, 0.00] exists
-                if has_pair_charged_zero and _close(g[1], charged_total) and _close(g[2], Decimal("0.00")):
+                if (
+                    has_pair_charged_zero
+                    and _close(g[1], charged_total)
+                    and _close(g[2], Decimal("0.00"))
+                ):
                     continue
 
                 p = g[1]
@@ -570,7 +591,6 @@ def parse_tables(lines: List[str]) -> Tuple[List[Dict], List[Dict]]:
                     paid_total = g[1]
                     debt_total = (charged_total - paid_total).quantize(TOL)
                     break
-
 
         # 2.2) If no explicit group found, reconstruct from uniq via identity:
         # charged_total = paid_total + debt_total, both numbers must be present in uniq.
@@ -645,13 +665,14 @@ def parse_tables(lines: List[str]) -> Tuple[List[Dict], List[Dict]]:
             if pair_found:
                 paid_total, debt_total = pair_found
 
-
         # 2.3) If we have dated payments, we can optionally "snap" paid_total to them when it matches.
         # (Do NOT force match; only use as a confirmation.)
         if paid != Decimal("0.00") and paid_total is not None:
             if _close(paid_total, paid):
                 pass  # ok
-            elif debt_total is not None and _close((charged_total - debt_total).quantize(TOL), paid):
+            elif debt_total is not None and _close(
+                (charged_total - debt_total).quantize(TOL), paid
+            ):
                 paid_total = paid
                 # keep debt_total as printed/derived; coherence checks below will verify
 
@@ -679,7 +700,7 @@ def parse_tables(lines: List[str]) -> Tuple[List[Dict], List[Dict]]:
                     "block_total_candidates": [str(x) for x in uniq[:50]],
                 },
             )
-        
+
         if debt_total is None:
             raise UserFacingError(
                 code="MONTH_DEBT_TOTAL_NOT_FOUND",
@@ -719,26 +740,73 @@ def parse_tables(lines: List[str]) -> Tuple[List[Dict], List[Dict]]:
                 f"charged({charged_total}) - paid({paid_total}) != debt_total(printed)({debt_total})"
             )
 
-
     # --- document totals from "ИТОГО ПО ПЕРИОДУ" ---
     doc_total_charged: Optional[Decimal] = None
     doc_total_paid: Optional[Decimal] = None
     doc_total_debt: Optional[Decimal] = None
 
-    def _parse_doc_totals_from(i_start: int) -> Tuple[Optional[Decimal], Optional[Decimal], Optional[Decimal]]:
+    def _parse_doc_totals_from(
+        i_start: int,
+    ) -> Tuple[Optional[Decimal], Optional[Decimal], Optional[Decimal]]:
+        """
+        MOEK PDFs often have "ИТОГО ПО ПЕРИОДУ" totals split across several lines
+        and may repeat the same amounts multiple times.
+        Old logic ("first 3 money tokens") is too brittle and may pick wrong columns.
+
+        Strategy:
+          1) Collect up to ~10 money values from next few lines.
+          2) Choose the best (charged, paid, debt) triple minimizing |charged - paid - debt|.
+          3) If no good triple found, fallback to first 3 values.
+        """
         found: List[Decimal] = []
         j = i_start
-        while j < n and len(found) < 3:
+
+        # collect money tokens from next lines (bounded)
+        max_lines = 10
+        max_vals = 10
+        lines_seen = 0
+        while j < n and lines_seen < max_lines and len(found) < max_vals:
             ln2 = (lines[j] or "").strip()
             vals = _try_money_values(ln2)
             for s in vals:
-                found.append(_d(s))
-                if len(found) >= 3:
+                try:
+                    found.append(_d(s).quantize(TOL))
+                except Exception:
+                    continue
+                if len(found) >= max_vals:
                     break
             j += 1
-        if len(found) >= 3:
-            return found[0], found[1], found[2]
-        return None, None, None
+            lines_seen += 1
+
+        if len(found) < 3:
+            return None, None, None
+
+        # Prefer a triple that satisfies charged - paid ≈ debt.
+        best: Tuple[Decimal, Decimal, Decimal] | None = None
+        best_score: Tuple[Decimal, Decimal, Decimal] | None = (
+            None  # (residual, |paid|, -charged)
+        )
+
+        for a in found:
+            for b in found:
+                for c in found:
+                    resid = (a - b - c).copy_abs().quantize(TOL)
+                    score = (
+                        resid,
+                        b.copy_abs().quantize(TOL),
+                        (Decimal("0.00") - a).quantize(TOL),
+                    )
+                    if best is None or score < best_score:  # type: ignore[operator]
+                        best = (a, b, c)
+                        best_score = score
+
+        # Accept only if residual is within a few cents.
+        if best is not None and best_score is not None:
+            if best_score[0] <= Decimal("0.02"):
+                return best[0], best[1], best[2]
+
+        # Fallback: first 3 values (legacy behavior)
+        return found[0], found[1], found[2]
 
     # ---------------------------
     # Main scan
@@ -765,7 +833,9 @@ def parse_tables(lines: List[str]) -> Tuple[List[Dict], List[Dict]]:
                     amt = Decimal(amt_str).quantize(TOL)
                     if kind == "payment":
                         # a = date
-                        payments.append({"date": a, "amount": f"{amt:.2f}", "period": current_month})
+                        payments.append(
+                            {"date": a, "amount": f"{amt:.2f}", "period": current_month}
+                        )
                         _add_payment(amt)
                     elif kind == "charge":
                         # a = src posting period MM.YYYY
@@ -795,7 +865,11 @@ def parse_tables(lines: List[str]) -> Tuple[List[Dict], List[Dict]]:
                 if not nxt:
                     j += 1
                     continue
-                if _PERIOD_RE.fullmatch(nxt) or _MONTH_HDR_RE.match(nxt) or _TOTAL_HDR_RE.match(nxt):
+                if (
+                    _PERIOD_RE.fullmatch(nxt)
+                    or _MONTH_HDR_RE.match(nxt)
+                    or _TOTAL_HDR_RE.match(nxt)
+                ):
                     break
                 tail_parts.append(nxt)
                 j += 1
@@ -842,7 +916,6 @@ def parse_tables(lines: List[str]) -> Tuple[List[Dict], List[Dict]]:
             i += 1
             continue
 
-
         # Charge posting inline "MM.YYYY amount"
         mch = _CHARGE_INLINE_RE.match(ln)
         if mch:
@@ -869,7 +942,6 @@ def parse_tables(lines: List[str]) -> Tuple[List[Dict], List[Dict]]:
         if _DATE_RE.match(ln) and current_month:
             amt_s = None
 
-
             # Allow crossing page breaks; stop only on logical block boundaries.
             # Keep a sane cap to avoid runaway on corrupted text layers.
             MAX_LOOKAHEAD = 200
@@ -880,7 +952,11 @@ def parse_tables(lines: List[str]) -> Tuple[List[Dict], List[Dict]]:
                     continue
 
                 # Stop on logical boundaries: next month / period marker / document totals
-                if _MONTH_HDR_RE.match(ln2) or _PERIOD_RE.match(ln2) or ln2.upper().startswith("ИТОГО ПО ПЕРИОДУ"):
+                if (
+                    _MONTH_HDR_RE.match(ln2)
+                    or _PERIOD_RE.match(ln2)
+                    or ln2.upper().startswith("ИТОГО ПО ПЕРИОДУ")
+                ):
                     break
 
                 # Optional: if another date appears before any amount, treat this date as footer/noise.
@@ -913,11 +989,19 @@ def parse_tables(lines: List[str]) -> Tuple[List[Dict], List[Dict]]:
                                 continue
 
                             # stop peeking on logical boundaries; we only care about immediate structure
-                            if _MONTH_HDR_RE.match(ln3) or _PERIOD_RE.match(ln3) or ln3.upper().startswith("ИТОГО ПО ПЕРИОДУ") or _DATE_RE.match(ln3):
+                            if (
+                                _MONTH_HDR_RE.match(ln3)
+                                or _PERIOD_RE.match(ln3)
+                                or ln3.upper().startswith("ИТОГО ПО ПЕРИОДУ")
+                                or _DATE_RE.match(ln3)
+                            ):
                                 break
 
                             vals3 = _try_money_values(ln3)
-                            if len(vals3) >= 2 or _money_only_line_value(ln3) is not None:
+                            if (
+                                len(vals3) >= 2
+                                or _money_only_line_value(ln3) is not None
+                            ):
                                 amt_s = None
                                 cand = None
                             break
@@ -932,7 +1016,6 @@ def parse_tables(lines: List[str]) -> Tuple[List[Dict], List[Dict]]:
 
                     amt_s = cand
                     break
-
 
             # If this is footer_date and no amount was found nearby, treat as footer/noise
             if footer_date and ln == footer_date and amt_s is None:
@@ -991,13 +1074,24 @@ def parse_tables(lines: List[str]) -> Tuple[List[Dict], List[Dict]]:
             # with a single amount, treat it as the amount for the earliest queued date (FIFO).
             # This fixes cases where the PDF text layer outputs a "dates column" block
             # followed by an "amounts column" block.
-            if current_month and (not adj_mode) and pending_payment_dates and len(decs) == 1:
+            if (
+                current_month
+                and (not adj_mode)
+                and pending_payment_dates
+                and len(decs) == 1
+            ):
                 mv = _money_only_line_value(ln)
                 if mv is not None:
                     amt = _d(mv)
                     if not _close(amt, Decimal("0.00")):
                         dt = pending_payment_dates.pop(0)
-                        payments.append({"date": dt, "amount": f"{amt:.2f}", "period": current_month})
+                        payments.append(
+                            {
+                                "date": dt,
+                                "amount": f"{amt:.2f}",
+                                "period": current_month,
+                            }
+                        )
                         _add_payment(amt)
                         i += 1
                         continue
@@ -1010,7 +1104,6 @@ def parse_tables(lines: List[str]) -> Tuple[List[Dict], List[Dict]]:
                 _push_candidate(x)
             i += 1
             continue
-
 
         i += 1
 
@@ -1035,8 +1128,12 @@ def parse_tables(lines: List[str]) -> Tuple[List[Dict], List[Dict]]:
         )
 
     # Document totals validation
-    if doc_total_charged is not None and doc_total_paid is not None and doc_total_debt is not None:
-        
+    if (
+        doc_total_charged is not None
+        and doc_total_paid is not None
+        and doc_total_debt is not None
+    ):
+
         # Include annual_adjustment_share into document totals (MOEK prints it inside "ИТОГО ПО ПЕРИОДУ")
         aa_charged = Decimal("0.00")
         aa_paid = Decimal("0.00")
@@ -1044,25 +1141,33 @@ def parse_tables(lines: List[str]) -> Tuple[List[Dict], List[Dict]]:
         for c in charges:
             if c.get("kind") == "annual_adjustment_share":
                 try:
-                    aa_charged += Decimal(str(c.get("amount")).replace(" ", "").replace(",", "."))
+                    aa_charged += Decimal(
+                        str(c.get("amount")).replace(" ", "").replace(",", ".")
+                    )
                 except Exception:
                     pass
 
         for p in payments:
             if p.get("kind") == "annual_adjustment_share":
                 try:
-                    aa_paid += Decimal(str(p.get("amount")).replace(" ", "").replace(",", "."))
+                    aa_paid += Decimal(
+                        str(p.get("amount")).replace(" ", "").replace(",", ".")
+                    )
                 except Exception:
                     pass
 
-        sum_ch = (sum(month_total_charged.values(), Decimal("0.00")) + aa_charged).quantize(TOL)
-        sum_pd = (sum(month_total_paid.values(), Decimal("0.00")) + aa_paid).quantize(TOL)
-        sum_db = (sum(month_total_debt.values(), Decimal("0.00")) + (aa_charged - aa_paid)).quantize(TOL)
+        sum_ch = (
+            sum(month_total_charged.values(), Decimal("0.00")) + aa_charged
+        ).quantize(TOL)
+        sum_pd = (sum(month_total_paid.values(), Decimal("0.00")) + aa_paid).quantize(
+            TOL
+        )
+        sum_db = (
+            sum(month_total_debt.values(), Decimal("0.00")) + (aa_charged - aa_paid)
+        ).quantize(TOL)
 
-        
         aa_charged = aa_charged.quantize(TOL)
         aa_paid = aa_paid.quantize(TOL)
-
 
         if not _close(sum_ch, doc_total_charged):
             raise UserFacingError(
@@ -1078,7 +1183,7 @@ def parse_tables(lines: List[str]) -> Tuple[List[Dict], List[Dict]]:
                     "hint": "Проверь таблицу начислений по периодам и строку «ИТОГО ПО ПЕРИОДУ» в PDF.",
                 },
             )
-        
+
         if not _close(sum_pd, doc_total_paid):
             delta = (sum_pd - doc_total_paid).quantize(TOL)
 
@@ -1094,7 +1199,12 @@ def parse_tables(lines: List[str]) -> Tuple[List[Dict], List[Dict]]:
                     pd = month_total_paid.get(m, Decimal("0.00")).quantize(TOL)
                     db = month_total_debt.get(m, Decimal("0.00")).quantize(TOL)
                     pd_rows = month_payments_sum.get(m, Decimal("0.00")).quantize(TOL)
-                    if _close(pd_rows, Decimal("0.00")) and _close(pd, ch) and _close(db, Decimal("0.00")) and ch > Decimal("0.00"):
+                    if (
+                        _close(pd_rows, Decimal("0.00"))
+                        and _close(pd, ch)
+                        and _close(db, Decimal("0.00"))
+                        and ch > Decimal("0.00")
+                    ):
                         flip_months.append((m, ch))
 
                 def _cents(x: Decimal) -> int:
@@ -1122,11 +1232,14 @@ def parse_tables(lines: List[str]) -> Tuple[List[Dict], List[Dict]]:
                         month_total_debt[m] = month_total_charged[m].quantize(TOL)
 
                     # recompute sums after flips (AA is included separately)
-                    sum_pd = (sum(month_total_paid.values(), Decimal("0.00")) + aa_paid).quantize(TOL)
-                    sum_db = (sum(month_total_debt.values(), Decimal("0.00")) + (aa_charged - aa_paid)).quantize(TOL)
+                    sum_pd = (
+                        sum(month_total_paid.values(), Decimal("0.00")) + aa_paid
+                    ).quantize(TOL)
+                    sum_db = (
+                        sum(month_total_debt.values(), Decimal("0.00"))
+                        + (aa_charged - aa_paid)
+                    ).quantize(TOL)
                     delta = (sum_pd - doc_total_paid).quantize(TOL)
-
-
 
             if _close(sum_pd, doc_total_paid):
                 # repaired deterministically via month flips
@@ -1142,7 +1255,9 @@ def parse_tables(lines: List[str]) -> Tuple[List[Dict], List[Dict]]:
                     rows.append((m, ch, pd, db, pd_rows))
 
                 # Suspicion score: inconsistency inside month, plus divergence from dated payment rows if present
-                def _score(r: Tuple[str, Decimal, Decimal, Decimal, Decimal]) -> Decimal:
+                def _score(
+                    r: Tuple[str, Decimal, Decimal, Decimal, Decimal],
+                ) -> Decimal:
                     _m, ch, pd, db, pd_rows = r
                     implied_db = (ch - pd).quantize(TOL)
                     score = (implied_db - db).copy_abs()
@@ -1157,18 +1272,31 @@ def parse_tables(lines: List[str]) -> Tuple[List[Dict], List[Dict]]:
                 ]
 
                 # Extra pinpoint: month(s) whose paid_total matches |delta| exactly (common failure mode)
-                suspects = [m for (m, _ch, pd, _db, _pd_rows) in rows if _close(pd, delta.copy_abs())]
+                suspects = [
+                    m
+                    for (m, _ch, pd, _db, _pd_rows) in rows
+                    if _close(pd, delta.copy_abs())
+                ]
                 if suspects:
-                    msg_lines.append(f"Suspect month(s) where paid_total≈|delta|: {', '.join(suspects)}")
+                    msg_lines.append(
+                        f"Suspect month(s) where paid_total≈|delta|: {', '.join(suspects)}"
+                    )
 
                 # Also highlight months with no dated payments but non-zero paid_total
-                no_rows_nonzero_paid = [m for (m, _ch, pd, _db, pd_rows) in rows if _close(pd_rows, Decimal('0.00')) and not _close(pd, Decimal('0.00'))]
+                no_rows_nonzero_paid = [
+                    m
+                    for (m, _ch, pd, _db, pd_rows) in rows
+                    if _close(pd_rows, Decimal("0.00"))
+                    and not _close(pd, Decimal("0.00"))
+                ]
                 if no_rows_nonzero_paid:
-                    msg_lines.append(f"Months with paid_rows=0 but paid_total>0: {', '.join(no_rows_nonzero_paid[:12])}")
+                    msg_lines.append(
+                        f"Months with paid_rows=0 but paid_total>0: {', '.join(no_rows_nonzero_paid[:12])}"
+                    )
 
                 msg_lines.append("Top months by inconsistency:")
 
-                for (m, ch, pd, db, pd_rows) in rows_sorted[:12]:
+                for m, ch, pd, db, pd_rows in rows_sorted[:12]:
                     implied_db = (ch - pd).quantize(TOL)
                     msg_lines.append(
                         f"  {m}: charged={ch} paid_total={pd} debt_total={db} paid_rows={pd_rows} (charged-paid_total={implied_db})"
@@ -1187,7 +1315,9 @@ def parse_tables(lines: List[str]) -> Tuple[List[Dict], List[Dict]]:
                         "delta": str(delta),
                         # важно: сохраняем твою диагностику (top suspects) в details, чтобы при желании
                         # показывать в UI по кнопке "Подробнее", либо хотя бы иметь в логах/статусе.
-                        "diagnostics": msg_lines[:80],  # ограничим размер, чтобы не раздувать JSON
+                        "diagnostics": msg_lines[
+                            :80
+                        ],  # ограничим размер, чтобы не раздувать JSON
                     },
                 )
 
@@ -1204,8 +1334,8 @@ def parse_tables(lines: List[str]) -> Tuple[List[Dict], List[Dict]]:
                     "doc_total_debt": str(doc_total_debt),
                 },
             )
-    
-         # ---------------------------
+
+        # ---------------------------
     # Normalize ordinary payments by period (domain rules)
     # ---------------------------
 
@@ -1226,7 +1356,9 @@ def parse_tables(lines: List[str]) -> Tuple[List[Dict], List[Dict]]:
             if not per or not dt:
                 continue
             try:
-                amt = Decimal(str(p.get("amount")).replace(" ", "").replace(",", ".")).quantize(TOL)
+                amt = Decimal(
+                    str(p.get("amount")).replace(" ", "").replace(",", ".")
+                ).quantize(TOL)
             except Exception:
                 continue
             by_period.setdefault(per, []).append((idx, dt, amt))
@@ -1274,7 +1406,9 @@ def parse_tables(lines: List[str]) -> Tuple[List[Dict], List[Dict]]:
             if not per:
                 continue
             try:
-                amt = Decimal(str(p.get("amount")).replace(" ", "").replace(",", ".")).quantize(TOL)
+                amt = Decimal(
+                    str(p.get("amount")).replace(" ", "").replace(",", ".")
+                ).quantize(TOL)
             except Exception:
                 continue
             sum_rows[per] = (sum_rows.get(per, Decimal("0.00")) + amt).quantize(TOL)
@@ -1312,8 +1446,5 @@ def parse_tables(lines: List[str]) -> Tuple[List[Dict], List[Dict]]:
                 )
 
     _normalize_and_validate_payments()
-   
 
     return charges, payments
-
-    
