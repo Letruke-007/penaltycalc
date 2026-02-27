@@ -224,8 +224,8 @@ class ProcessingService:
                 st.setdefault(
                     "exclude_zero_debt_periods", bool(exclude_zero_debt_periods)
                 )
-                st.setdefault("add_state_duty", bool(add_state_duty))
             return res
+
         if hasattr(res, "model_dump"):
             return res.model_dump(exclude_none=True)
         raise ProcessingError("pdf_to_json returned unsupported type")
