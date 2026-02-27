@@ -1086,49 +1086,52 @@ def parse_tables(lines: List[str]) -> Tuple[List[Dict], List[Dict]]:
                 and len(decs) == 1
             ):
                 mv = _money_only_line_value(ln)
-            if (
-                current_month
-                and (not adj_mode)
-                and payment_fifo_mode
-                and pending_payment_dates
-                and len(decs) == 1
-            ):
-                mv = _money_only_line_value(ln)
                 if mv is not None:
                     amt = _d(mv)
-                    if not _close(amt, Decimal("0.00")):
-                        # Reject "money-only" values that are actually debt/totals fragments.
-                        # If the next significant line is totals-like (2+ money tokens) or "ИТОГО ПО ПЕРИОДУ",
-                        # then this amount is NOT a payment.
-                        nxt_sig = ""
-                        for j in range(i + 1, min(n, i + 60)):
-                            s = (lines[j] or "").strip()
-                            if not s:
-                                continue
-                            nxt_sig = s
-                            break
 
-                        if nxt_sig:
-                            if nxt_sig.upper().startswith("ИТОГО ПО ПЕРИОДУ"):
-                                # not a payment
-                                pass
-                            else:
-                                nxt_vals = _try_money_values(nxt_sig)
-                                if len(nxt_vals) >= 2:
-                                    # totals row, not a payment amount
-                                    pass
-                                else:
-                                    dt = pending_payment_dates.pop(0)
-                                    payments.append(
-                                        {
-                                            "date": dt,
-                                            "amount": f"{amt:.2f}",
-                                            "period": current_month,
-                                        }
-                                    )
-                                    _add_payment(amt)
-                                    i += 1
-                                    continue
+                    # Domain: payment rows cannot be 0.00
+                    if _close(amt, Decimal("0.00")):
+                        pass
+                    else:
+                        # NEW GUARD:
+                        # If ближайше по потоку (до границы месяца/периода/следующей даты)
+                        # встречается строка с 2+ суммами, значит мы уже в зоне итогов (charged/paid/debt),
+                        # и текущая "одиночная сумма" НЕ должна привязываться к дате FIFO.
+                        looks_like_totals_ahead = False
+                        LOOKAHEAD = 80
+
+                        for j in range(i + 1, min(n, i + 1 + LOOKAHEAD)):
+                            ln2 = (lines[j] or "").strip()
+                            if not ln2:
+                                continue
+
+                            # stop on logical boundaries; totals for month end are before these boundaries
+                            if (
+                                _MONTH_HDR_RE.match(ln2)
+                                or _PERIOD_RE.match(ln2)
+                                or _TOTAL_HDR_RE.match(ln2)
+                                or ln2.upper().startswith("ИТОГО ПО ПЕРИОДУ")
+                                or _DATE_RE.match(ln2)
+                            ):
+                                break
+
+                            vals2 = _try_money_values(ln2)
+                            if len(vals2) >= 2:
+                                looks_like_totals_ahead = True
+                                break
+
+                        if not looks_like_totals_ahead:
+                            dt = pending_payment_dates.pop(0)
+                            payments.append(
+                                {
+                                    "date": dt,
+                                    "amount": f"{amt:.2f}",
+                                    "period": current_month,
+                                }
+                            )
+                            _add_payment(amt)
+                            i += 1
+                            continue
                         else:
                             # no next line — still allow as payment
                             dt = pending_payment_dates.pop(0)
