@@ -542,6 +542,21 @@ def parse_tables(lines: List[str]) -> Tuple[List[Dict], List[Dict]]:
 
         groups = month_money_groups.get(prev_month, [])
 
+        # ---------------------------
+        # Hard domain rule (MOEK):
+        # If there are NO payment rows for the month (paid(rows) == 0.00)
+        # and 0.00 is printed among month totals candidates, treat it as PAID=0.00,
+        # and the whole charged_total becomes the month debt.
+        #
+        # This prevents mis-picking "paid" from duplicated "charged" columns (common in MOEK PDFs).
+        # ---------------------------
+        has_zero_candidate = any(_close(x, Decimal("0.00")) for x in uniq)
+
+        if _close(paid, Decimal("0.00")) and has_zero_candidate:
+            month_total_paid[prev_month] = Decimal("0.00")
+            month_total_debt[prev_month] = charged_total.quantize(TOL)
+            return
+
         # 2) paid/debt totals:
         # Source of truth for month paid/debt is the PRINTED totals inside the month block.
         # Dated payment rows (paid sum) may be incomplete in some PDFs.
@@ -1531,6 +1546,13 @@ def parse_tables(lines: List[str]) -> Tuple[List[Dict], List[Dict]]:
                         "paid_total_printed": str(paid_total),
                         "delta": str(delta),
                         "payments_rows": rows_dbg[:40],
+                        "month_total_candidates": [
+                            str(x) for x in month_money_candidates.get(per, [])[:60]
+                        ],
+                        "month_money_groups": [
+                            [str(v) for v in g]
+                            for g in month_money_groups.get(per, [])[:20]
+                        ],
                     },
                 )
 
