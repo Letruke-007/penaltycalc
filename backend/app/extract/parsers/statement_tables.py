@@ -1121,6 +1121,7 @@ def parse_tables(lines: List[str]) -> Tuple[List[Dict], List[Dict]]:
                                 break
 
                         if not looks_like_totals_ahead:
+                            # OK: это похоже на реальную "колонку сумм" платежей
                             dt = pending_payment_dates.pop(0)
                             payments.append(
                                 {
@@ -1133,18 +1134,13 @@ def parse_tables(lines: List[str]) -> Tuple[List[Dict], List[Dict]]:
                             i += 1
                             continue
                         else:
-                            # no next line — still allow as payment
-                            dt = pending_payment_dates.pop(0)
-                            payments.append(
-                                {
-                                    "date": dt,
-                                    "amount": f"{amt:.2f}",
-                                    "period": current_month,
-                                }
-                            )
-                            _add_payment(amt)
-                            i += 1
-                            continue
+                            # Впереди видны итоги месяца (строка с 2+ суммами) — значит,
+                            # текущая одиночная сумма относится к итогам (charged/paid/debt),
+                            # а НЕ к платежу. Скорее всего queued dates — это дата печати/подвал.
+                            pending_payment_dates.clear()
+                            payment_fifo_mode = False
+                            # НЕ consuming line: пусть дальше обработается как кандидат/итог
+                            # (ниже по коду эта сумма будет добавлена в month_money_candidates/groups)
 
             # сохраняем группой, если в строке 2+ сумм (итоги)
             if len(decs) >= 2 and current_month:
