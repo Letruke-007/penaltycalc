@@ -588,10 +588,19 @@ def parse_tables(lines: List[str]) -> Tuple[List[Dict], List[Dict]]:
                     break
 
         # Pair [charged, paid] is unambiguous.
+        # Guard: some MOEK layouts duplicate "charged" across multiple columns.
+        # In such cases group [charged, charged] must NOT be interpreted as paid==charged.
         if paid_total is None:
             for g in groups:
                 if len(g) == 2 and _close(g[0], charged_total):
-                    paid_total = g[1]
+                    cand_paid = g[1]
+
+                    # If second equals charged_total, it's ambiguous (likely another "charged" column).
+                    # Skip this shortcut and let identity-based logic (paid+debt==charged) decide.
+                    if _close(cand_paid, charged_total):
+                        continue
+
+                    paid_total = cand_paid
                     debt_total = (charged_total - paid_total).quantize(TOL)
                     break
 
