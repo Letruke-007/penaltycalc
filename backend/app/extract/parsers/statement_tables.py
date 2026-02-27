@@ -395,6 +395,9 @@ def parse_tables(lines: List[str]) -> Tuple[List[Dict], List[Dict]]:
     # NEW: queue for \"column-separated\" payments inside a month.
     # Some PDFs emit all dates first, then all amounts; we reconstruct payments FIFO.
     pending_payment_dates: List[str] = []
+    payment_fifo_mode: bool = (
+        False  # включаем только когда реально видим "колонку дат" без сумм
+    )
 
     # annual adjustment parsing (kept)
     adj_mode: bool = False
@@ -845,6 +848,7 @@ def parse_tables(lines: List[str]) -> Tuple[List[Dict], List[Dict]]:
 
             # reset month-local queues
             pending_payment_dates.clear()
+            payment_fifo_mode = False
 
             # reset AA block on new month
             adj_mode = False
@@ -962,10 +966,11 @@ def parse_tables(lines: List[str]) -> Tuple[List[Dict], List[Dict]]:
                 # Optional: if another date appears before any amount, treat this date as footer/noise.
                 # (Prevents "print date" from stealing an amount much later.)
                 if _DATE_RE.match(ln2):
-                    # NEW: if this is NOT the detected footer date, treat it as a
-                    # "column-separated" payment date and enqueue it.
+                    # Column-separated payments: dates go as a block (no amounts nearby).
+                    # Enqueue current date and enable FIFO-mode for this month.
                     if not (footer_date and ln == footer_date):
                         pending_payment_dates.append(ln)
+                        payment_fifo_mode = True
                     amt_s = None
                     break
 
@@ -1081,40 +1086,51 @@ def parse_tables(lines: List[str]) -> Tuple[List[Dict], List[Dict]]:
                 and len(decs) == 1
             ):
                 mv = _money_only_line_value(ln)
+            if (
+                current_month
+                and (not adj_mode)
+                and payment_fifo_mode
+                and pending_payment_dates
+                and len(decs) == 1
+            ):
+                mv = _money_only_line_value(ln)
                 if mv is not None:
                     amt = _d(mv)
                     if not _close(amt, Decimal("0.00")):
-                        # GUARD:
-                        # In some PDFs a "money-only" line inside a month block is NOT a payment amount,
-                        # but a debt/total fragment printed right before a totals line like:
-                        #   "<charged> <paid> <debt>" or document totals header.
-                        # If the next significant line is a totals-like line (2+ money tokens)
-                        # or "ИТОГО ПО ПЕРИОДУ", do NOT treat this amount as a payment.
-                        looks_like_totals_tail = False
-                        for j in range(i + 1, min(n, i + 1 + 30)):
-                            ln_next = (lines[j] or "").strip()
-                            if not ln_next:
+                        # Reject "money-only" values that are actually debt/totals fragments.
+                        # If the next significant line is totals-like (2+ money tokens) or "ИТОГО ПО ПЕРИОДУ",
+                        # then this amount is NOT a payment.
+                        nxt_sig = ""
+                        for j in range(i + 1, min(n, i + 60)):
+                            s = (lines[j] or "").strip()
+                            if not s:
                                 continue
-                            if _TOTAL_HDR_RE.match(
-                                ln_next
-                            ) or ln_next.upper().startswith("ИТОГО ПО ПЕРИОДУ"):
-                                looks_like_totals_tail = True
-                                break
-                            vals_next = _try_money_values(ln_next)
-                            if len(vals_next) >= 2:
-                                looks_like_totals_tail = True
-                                break
-                            # stop peeking if we hit a new logical block
-                            if (
-                                _MONTH_HDR_RE.match(ln_next)
-                                or _PERIOD_RE.match(ln_next)
-                                or _DATE_RE.match(ln_next)
-                            ):
-                                break
-                            # otherwise keep looking a bit further
+                            nxt_sig = s
                             break
 
-                        if not looks_like_totals_tail:
+                        if nxt_sig:
+                            if nxt_sig.upper().startswith("ИТОГО ПО ПЕРИОДУ"):
+                                # not a payment
+                                pass
+                            else:
+                                nxt_vals = _try_money_values(nxt_sig)
+                                if len(nxt_vals) >= 2:
+                                    # totals row, not a payment amount
+                                    pass
+                                else:
+                                    dt = pending_payment_dates.pop(0)
+                                    payments.append(
+                                        {
+                                            "date": dt,
+                                            "amount": f"{amt:.2f}",
+                                            "period": current_month,
+                                        }
+                                    )
+                                    _add_payment(amt)
+                                    i += 1
+                                    continue
+                        else:
+                            # no next line — still allow as payment
                             dt = pending_payment_dates.pop(0)
                             payments.append(
                                 {
