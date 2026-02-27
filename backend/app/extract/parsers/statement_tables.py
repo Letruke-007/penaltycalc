@@ -1219,6 +1219,30 @@ def parse_tables(lines: List[str]) -> Tuple[List[Dict], List[Dict]]:
         aa_charged = aa_charged.quantize(TOL)
         aa_paid = aa_paid.quantize(TOL)
 
+        # --- FIX: guard against swapped paid/debt in "ИТОГО ПО ПЕРИОДУ" ---
+        # Sometimes both permutations satisfy charged - paid - debt == 0,
+        # so the earlier selection logic may choose paid/debt reversed.
+        # If period sums clearly match the opposite mapping, swap them.
+
+        if (
+            doc_total_charged is not None
+            and doc_total_paid is not None
+            and doc_total_debt is not None
+        ):
+            if (
+                (
+                    not _close(sum_pd, doc_total_paid)
+                    or not _close(sum_db, doc_total_debt)
+                )
+                and _close(sum_pd, doc_total_debt)
+                and _close(sum_db, doc_total_paid)
+                and _close(
+                    (doc_total_paid + doc_total_debt).quantize(TOL),
+                    doc_total_charged,
+                )
+            ):
+                doc_total_paid, doc_total_debt = doc_total_debt, doc_total_paid
+
         if not _close(sum_ch, doc_total_charged):
             raise UserFacingError(
                 code="DOC_TOTALS_MISMATCH_CHARGED",
