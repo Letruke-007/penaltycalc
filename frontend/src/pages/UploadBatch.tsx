@@ -39,6 +39,10 @@ export function UploadBatch(props: UploadBatchProps) {
       add_state_duty: boolean;
     }>,
   ) => {
+    for (const it of state.items) {
+      actions.updateItemParams(it.clientFileId, patch as any);
+    }
+  };
 
   const lastInspectCountRef = useRef(0);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -184,7 +188,9 @@ export function UploadBatch(props: UploadBatchProps) {
                     label="Добавить расчет суммы госпошлины"
                     checked={batchAddStateDuty}
                     disabled={disabled}
-                    onChange={(checked) => applyToAll({ add_state_duty: checked })}
+                    onChange={(checked) =>
+                      applyToAll({ add_state_duty: checked })
+                    }
                   />
 
                   {showMerge && (
