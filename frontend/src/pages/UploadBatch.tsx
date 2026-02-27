@@ -16,18 +16,29 @@ export function UploadBatch(props: UploadBatchProps) {
   const disabled = state.phase === "processing";
   const hasItems = state.items.length > 0;
 
-  const batchCalcDate = useMemo(() => state.items[0]?.params.calc_date ?? "", [state.items]);
+  const batchCalcDate = useMemo(
+    () => state.items[0]?.params.calc_date ?? "",
+    [state.items],
+  );
   const batchExcludeZero = useMemo(
     () => state.items[0]?.params.exclude_zero_debt_periods ?? false,
+    [state.items],
+  );
+  const batchAddStateDuty = useMemo(
+    () => state.items[0]?.params.add_state_duty ?? false,
     [state.items],
   );
 
   const mergeXlsx = state.mergeXlsx;
   const showMerge = state.items.length > 1;
 
-  const applyToAll = (patch: Partial<{ calc_date: DDMMYYYY; exclude_zero_debt_periods: boolean }>) => {
-    for (const it of state.items) actions.updateItemParams(it.clientFileId, patch);
-  };
+  const applyToAll = (
+    patch: Partial<{
+      calc_date: DDMMYYYY;
+      exclude_zero_debt_periods: boolean;
+      add_state_duty: boolean;
+    }>,
+  ) => {
 
   const lastInspectCountRef = useRef(0);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -51,7 +62,9 @@ export function UploadBatch(props: UploadBatchProps) {
 
   const onClearAll = () => {
     if (disabled) return;
-    const ok = window.confirm("Очистить список файлов? Все загруженные справки будут удалены из набора.");
+    const ok = window.confirm(
+      "Очистить список файлов? Все загруженные справки будут удалены из набора.",
+    );
     if (!ok) return;
     actions.clearAll();
   };
@@ -65,10 +78,21 @@ export function UploadBatch(props: UploadBatchProps) {
       .map((it) => {
         const anyIt = it as any;
         const needs = Boolean(anyIt.needs_ocr ?? anyIt.inspect?.needs_ocr);
-        const msg = (anyIt.inspect_warning ?? anyIt.inspect?.inspect_warning) as string | undefined;
-        return needs ? { clientFileId: it.clientFileId, filename: it.file.name, message: msg } : null;
+        const msg = (anyIt.inspect_warning ??
+          anyIt.inspect?.inspect_warning) as string | undefined;
+        return needs
+          ? {
+              clientFileId: it.clientFileId,
+              filename: it.file.name,
+              message: msg,
+            }
+          : null;
       })
-      .filter(Boolean) as Array<{ clientFileId: string; filename: string; message?: string }>;
+      .filter(Boolean) as Array<{
+      clientFileId: string;
+      filename: string;
+      message?: string;
+    }>;
   }, [state.items]);
 
   return (
@@ -76,10 +100,12 @@ export function UploadBatch(props: UploadBatchProps) {
       {/* Header */}
       <div style={headerRowStyle}>
         <div>
-          <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 6 }}>Загрузка справок</div>
+          <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 6 }}>
+            Загрузка справок
+          </div>
           <div style={{ fontSize: 13, color: "#525252", lineHeight: 1.35 }}>
-            Загрузите PDF-справки о задолженности. Проверьте должника и задайте параметры — затем сформируйте расчет пени
-            в XLSX.
+            Загрузите PDF-справки о задолженности. Проверьте должника и задайте
+            параметры — затем сформируйте расчет пени в XLSX.
           </div>
         </div>
 
@@ -121,7 +147,12 @@ export function UploadBatch(props: UploadBatchProps) {
 
       {!hasItems && (
         <div style={{ marginBottom: 16 }}>
-          <FileDrop multiple accept="application/pdf" disabled={disabled} onFiles={(files) => actions.addFiles(files)} />
+          <FileDrop
+            multiple
+            accept="application/pdf"
+            disabled={disabled}
+            onFiles={(files) => actions.addFiles(files)}
+          />
         </div>
       )}
 
@@ -145,7 +176,15 @@ export function UploadBatch(props: UploadBatchProps) {
                     label="Исключить периоды с нулевым долгом"
                     checked={batchExcludeZero}
                     disabled={disabled}
-                    onChange={(checked) => applyToAll({ exclude_zero_debt_periods: checked })}
+                    onChange={(checked) =>
+                      applyToAll({ exclude_zero_debt_periods: checked })
+                    }
+                  />
+                  <ParamCheckbox
+                    label="Добавить расчет суммы госпошлины"
+                    checked={batchAddStateDuty}
+                    disabled={disabled}
+                    onChange={(checked) => applyToAll({ add_state_duty: checked })}
                   />
 
                   {showMerge && (
@@ -182,7 +221,11 @@ export function UploadBatch(props: UploadBatchProps) {
                   }}
                   disabled={!state.canProcess}
                   style={btnPrimaryStyle(!state.canProcess)}
-                  title={!state.canProcess ? "Проверьте обязательные поля и дождитесь завершения извлечения" : ""}
+                  title={
+                    !state.canProcess
+                      ? "Проверьте обязательные поля и дождитесь завершения извлечения"
+                      : ""
+                  }
                 >
                   Сформировать расчёт
                 </button>
@@ -191,20 +234,31 @@ export function UploadBatch(props: UploadBatchProps) {
 
             {state.innMismatch.hasMismatch && (
               <div style={bannerWarnStyle}>
-                <span style={{ fontWeight: 700 }}>Разные ИНН.</span>&nbsp;Объединение в один XLSX недоступно. ИНН:{" "}
+                <span style={{ fontWeight: 700 }}>Разные ИНН.</span>
+                &nbsp;Объединение в один XLSX недоступно. ИНН:{" "}
                 {state.innMismatch.inns.join(", ")}.
               </div>
             )}
 
             {ocrItems.length > 0 && (
               <div style={bannerOcrStyle}>
-                <div style={{ fontWeight: 700 }}>{ocrItems.length} файл(ов) требуют OCR и не будут обработаны</div>
+                <div style={{ fontWeight: 700 }}>
+                  {ocrItems.length} файл(ов) требуют OCR и не будут обработаны
+                </div>
                 <div style={{ marginTop: 6, display: "grid", gap: 4 }}>
                   {ocrItems.map((x) => (
-                    <div key={x.clientFileId} style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
+                    <div
+                      key={x.clientFileId}
+                      style={{
+                        display: "flex",
+                        gap: 8,
+                        alignItems: "baseline",
+                      }}
+                    >
                       <span style={{ fontWeight: 700 }}>{x.filename}:</span>
                       <span style={{ whiteSpace: "pre-wrap" }}>
-                        {x.message ?? "В PDF отсутствует текстовый слой (похоже на скан). Нужен OCR."}
+                        {x.message ??
+                          "В PDF отсутствует текстовый слой (похоже на скан). Нужен OCR."}
                       </span>
                     </div>
                   ))}
@@ -215,7 +269,9 @@ export function UploadBatch(props: UploadBatchProps) {
             {state.globalError && (
               <div style={bannerErrorStyle}>
                 <span style={{ fontWeight: 700 }}>Ошибка.</span>&nbsp;
-                <span style={{ whiteSpace: "pre-wrap" }}>{state.globalError}</span>
+                <span style={{ whiteSpace: "pre-wrap" }}>
+                  {state.globalError}
+                </span>
               </div>
             )}
           </div>
@@ -224,7 +280,9 @@ export function UploadBatch(props: UploadBatchProps) {
           <div style={sectionHeadStyle}>
             <div style={sectionTitleStyle}>Справки</div>
 
-            <div style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
+            <div
+              style={{ display: "inline-flex", alignItems: "center", gap: 10 }}
+            >
               <div style={sectionMetaStyle}>Всего: {state.items.length}</div>
               <StatusBadge phase={state.phase} />
             </div>
@@ -258,7 +316,11 @@ function isDDMMYYYY(v: string): v is DDMMYYYY {
   return /^\d{2}\.\d{2}\.\d{4}$/.test(v);
 }
 
-function DateInput(props: { value: string; disabled?: boolean; onChange: (v: DDMMYYYY) => void }) {
+function DateInput(props: {
+  value: string;
+  disabled?: boolean;
+  onChange: (v: DDMMYYYY) => void;
+}) {
   const { value, disabled, onChange } = props;
 
   const [text, setText] = React.useState<string>(value);
@@ -304,7 +366,13 @@ function DateInput(props: { value: string; disabled?: boolean; onChange: (v: DDM
   };
 
   return (
-    <div style={{ position: "relative", display: "inline-flex", alignItems: "center" }}>
+    <div
+      style={{
+        position: "relative",
+        display: "inline-flex",
+        alignItems: "center",
+      }}
+    >
       <input
         type="text"
         value={text}
@@ -332,7 +400,13 @@ function DateInput(props: { value: string; disabled?: boolean; onChange: (v: DDM
         tabIndex={-1}
         aria-hidden="true"
         disabled={disabled}
-        style={{ position: "absolute", opacity: 0, pointerEvents: "none", width: 0, height: 0 }}
+        style={{
+          position: "absolute",
+          opacity: 0,
+          pointerEvents: "none",
+          width: 0,
+          height: 0,
+        }}
         onChange={(e) => {
           const iso = e.target.value;
           if (!iso) return;
@@ -350,13 +424,20 @@ function DateInput(props: { value: string; disabled?: boolean; onChange: (v: DDM
   );
 }
 
-function parseDDMMYYYY(v: string): { day: number; month: number; year: number } | null {
+function parseDDMMYYYY(
+  v: string,
+): { day: number; month: number; year: number } | null {
   const m = v.trim().match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
   if (!m) return null;
   const day = Number(m[1]);
   const month = Number(m[2]);
   const year = Number(m[3]);
-  if (!Number.isFinite(day) || !Number.isFinite(month) || !Number.isFinite(year)) return null;
+  if (
+    !Number.isFinite(day) ||
+    !Number.isFinite(month) ||
+    !Number.isFinite(year)
+  )
+    return null;
   if (month < 1 || month > 12) return null;
   const dim = new Date(year, month, 0).getDate();
   if (day < 1 || day > dim) return null;

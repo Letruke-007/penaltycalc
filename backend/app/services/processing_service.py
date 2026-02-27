@@ -50,7 +50,9 @@ class ProcessingService:
     # -----------------------------
     # Inspect (text-layer only)
     # -----------------------------
-    def ensure_inspect(self, pdf_path: Path, inspect_path: Path, *, force: bool) -> InspectResult:
+    def ensure_inspect(
+        self, pdf_path: Path, inspect_path: Path, *, force: bool
+    ) -> InspectResult:
         if not force and inspect_path.exists():
             try:
                 payload = json.loads(inspect_path.read_text(encoding="utf-8"))
@@ -120,12 +122,13 @@ class ProcessingService:
             name = ""
             for ln in lines[:40]:
                 low = ln.lower()
-                if len(ln) >= 8 and not low.startswith(("справка", "задолж", "итого", "оплата", "выставлен")):
+                if len(ln) >= 8 and not low.startswith(
+                    ("справка", "задолж", "итого", "оплата", "выставлен")
+                ):
                     name = ln
                     break
 
             return InspectResult(debtor_name=name, debtor_inn=inn)
-
 
     # -----------------------------
     # Pipeline: PDF -> JSON -> XLSX
@@ -141,6 +144,7 @@ class ProcessingService:
         rate_percent: float,
         overdue_start_day: int,
         exclude_zero_debt_periods: bool = False,
+        add_state_duty: bool = False,
     ) -> None:
         statement_obj = await self._pdf_to_json(
             pdf_path=pdf_path,
@@ -149,6 +153,7 @@ class ProcessingService:
             rate_percent=rate_percent,
             overdue_start_day=overdue_start_day,
             exclude_zero_debt_periods=exclude_zero_debt_periods,
+            add_state_duty=add_state_duty,
         )
 
         json_out.write_text(
@@ -156,7 +161,9 @@ class ProcessingService:
             encoding="utf-8",
         )
 
-        await self._json_to_xlsx(json_path=json_out, xlsx_path=xlsx_out)
+        await self._json_to_xlsx(
+            json_path=json_out, xlsx_path=xlsx_out, add_state_duty=add_state_duty
+        )
 
     async def process_pdf_to_json(
         self,
@@ -168,6 +175,7 @@ class ProcessingService:
         rate_percent: float,
         overdue_start_day: int,
         exclude_zero_debt_periods: bool = False,
+        add_state_duty: bool = False,
     ) -> None:
         """PDF -> JSON only (used for merged XLSX path)."""
         statement_obj = await self._pdf_to_json(
@@ -177,6 +185,7 @@ class ProcessingService:
             rate_percent=rate_percent,
             overdue_start_day=overdue_start_day,
             exclude_zero_debt_periods=exclude_zero_debt_periods,
+            add_state_duty=add_state_duty,
         )
         json_out.write_text(
             json.dumps(statement_obj, ensure_ascii=False, indent=2, default=str),
@@ -192,11 +201,14 @@ class ProcessingService:
         rate_percent: float,
         overdue_start_day: int,
         exclude_zero_debt_periods: bool = False,
+        add_state_duty: bool = False,
     ) -> dict[str, Any]:
         try:
             from app.pipeline.pdf_to_json import pdf_to_json  # type: ignore
         except Exception as e:  # noqa: BLE001
-            raise ProcessingError(f"Cannot import app.pipeline.pdf_to_json.pdf_to_json: {e}") from e
+            raise ProcessingError(
+                f"Cannot import app.pipeline.pdf_to_json.pdf_to_json: {e}"
+            ) from e
 
         res = pdf_to_json(
             str(pdf_path),
@@ -209,21 +221,30 @@ class ProcessingService:
         if isinstance(res, dict):
             st = res.get("statement")
             if isinstance(st, dict):
-                st.setdefault("exclude_zero_debt_periods", bool(exclude_zero_debt_periods))
+                st.setdefault(
+                    "exclude_zero_debt_periods", bool(exclude_zero_debt_periods)
+                )
+                st.setdefault("add_state_duty", bool(add_state_duty))
             return res
         if hasattr(res, "model_dump"):
             return res.model_dump(exclude_none=True)
         raise ProcessingError("pdf_to_json returned unsupported type")
 
-    async def _json_to_xlsx(self, *, json_path: Path, xlsx_path: Path) -> None:
+    async def _json_to_xlsx(
+        self, *, json_path: Path, xlsx_path: Path, add_state_duty: bool = False
+    ) -> None:
         try:
             from app.pipeline.json_to_xlsx import json_to_xlsx  # type: ignore
         except Exception as e:  # noqa: BLE001
-            raise ProcessingError(f"Cannot import app.pipeline.json_to_xlsx.json_to_xlsx: {e}") from e
+            raise ProcessingError(
+                f"Cannot import app.pipeline.json_to_xlsx.json_to_xlsx: {e}"
+            ) from e
 
-        json_to_xlsx(json_path, xlsx_path)
+        json_to_xlsx(json_path, xlsx_path, add_state_duty=add_state_duty)
 
-    async def jsons_to_merged_xlsx(self, json_paths: list[Path], xlsx_path: Path) -> None:
+    async def jsons_to_merged_xlsx(
+        self, json_paths: list[Path], xlsx_path: Path, add_state_duty: bool = False
+    ) -> None:
         """Build ONE XLSX from multiple per-contract Statement JSON files."""
         try:
             from app.pipeline.json_to_xlsx import build_xlsx_from_many_statement_jsons  # type: ignore
@@ -232,9 +253,16 @@ class ProcessingService:
                 f"Cannot import app.pipeline.json_to_xlsx.build_xlsx_from_many_statement_jsons: {e}"
             ) from e
 
-        build_xlsx_from_many_statement_jsons([Path(p) for p in json_paths], Path(xlsx_path))
-    
-    async def json_to_xlsx(self, *, json_path: Path, xlsx_path: Path) -> None:
-        """JSON -> XLSX (public helper, used by batch merge mode)."""
-        await self._json_to_xlsx(json_path=json_path, xlsx_path=xlsx_path)
+        build_xlsx_from_many_statement_jsons(
+            [Path(p) for p in json_paths],
+            Path(xlsx_path),
+            add_state_duty=add_state_duty,
+        )
 
+    async def json_to_xlsx(
+        self, *, json_path: Path, xlsx_path: Path, add_state_duty: bool = False
+    ) -> None:
+        """JSON -> XLSX (public helper, used by batch merge mode)."""
+        await self._json_to_xlsx(
+            json_path=json_path, xlsx_path=xlsx_path, add_state_duty=add_state_duty
+        )

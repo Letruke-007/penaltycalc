@@ -135,7 +135,9 @@ def _merge_footnote_block_a_h(ws: Worksheet, start_row: int) -> None:
 # =============================================================================
 
 
-def render_statement_sheet(ws: Worksheet, stmt: Statement) -> None:
+def render_statement_sheet(
+    ws: Worksheet, stmt: Statement, *, add_state_duty: bool = False
+) -> None:
     """
     Render:
       - Header A2:M14 (exact formatting)
@@ -174,6 +176,7 @@ def render_statement_sheet(ws: Worksheet, stmt: Statement) -> None:
         key_rate=key_rate,
         contract_number=body.contract.number,
         category=body.category or "",
+        add_state_duty=add_state_duty,
     )
 
     # Apply thin grid for whole table (header + data + totals + footer if included)
@@ -192,6 +195,7 @@ def render_statement_sheet(ws: Worksheet, stmt: Statement) -> None:
             dyn_heights[tail.sprav_start_row + 1] = 16.9
             dyn_heights[tail.sprav_start_row + 2] = 16.5
             dyn_heights[tail.sprav_start_row + 3] = 16.5
+            dyn_heights[tail.sprav_start_row + 4] = 16.5
 
     if dyn_heights:
         apply_row_heights(ws, dyn_heights)
@@ -200,7 +204,9 @@ def render_statement_sheet(ws: Worksheet, stmt: Statement) -> None:
     _apply_print_setup(ws)
 
 
-def render_statements_sheet(ws: Worksheet, stmts: List[Statement]) -> None:
+def render_statements_sheet(
+    ws: Worksheet, stmts: List[Statement], *, add_state_duty: bool = False
+) -> None:
     if not stmts:
         return
 
@@ -266,7 +272,11 @@ def render_statements_sheet(ws: Worksheet, stmts: List[Statement]) -> None:
     if contract_footer_debt_cells and contract_footer_penalty_cells:
         sprav_start = cursor_row
         _render_sprav_block_sum(
-            ws, sprav_start, contract_footer_debt_cells, contract_footer_penalty_cells
+            ws,
+            sprav_start,
+            contract_footer_debt_cells,
+            contract_footer_penalty_cells,
+            add_state_duty=add_state_duty,
         )
 
         # В СПРАВОЧНО не применяем grid/outer borders (как в single)
@@ -277,6 +287,7 @@ def render_statements_sheet(ws: Worksheet, stmts: List[Statement]) -> None:
                 sprav_start + 1: 16.9,
                 sprav_start + 2: 16.5,
                 sprav_start + 3: 16.5,
+                sprav_start + 4: 16.5,
             },
         )
 
@@ -468,8 +479,30 @@ def _render_contract_header_at(ws: Worksheet, body: Any, *, start_row: int) -> i
     return r_data
 
 
+def _state_duty_formula(claim_cell_addr: str) -> str:
+    """
+    State duty (госпошлина) for arbitrazh courts (NK RF scale in prompt).
+    Returns Excel formula, rounded to integer, with cap 10,000,000.
+    """
+    x = claim_cell_addr
+    return (
+        "=ROUND("
+        f"IF({x}<=100000,10000,"
+        f"IF({x}<=1000000,10000+0.05*({x}-100000),"
+        f"IF({x}<=10000000,55000+0.03*({x}-1000000),"
+        f"IF({x}<=50000000,325000+0.01*({x}-10000000),"
+        f"MIN(10000000,725000+0.005*({x}-50000000))"
+        "))))),0)"
+    )
+
+
 def _render_sprav_block_sum(
-    ws: Worksheet, sprav_start: int, debt_cells: list[str], penalty_cells: list[str]
+    ws: Worksheet,
+    sprav_start: int,
+    debt_cells: list[str],
+    penalty_cells: list[str],
+    *,
+    add_state_duty: bool = False,
 ) -> None:
     """Global СПРАВОЧНО block for merged XLSX (sums across contracts).
     Как в single: без сетки/рамок, только тонкая нижняя линия под заголовком 'СПРАВОЧНО' (J:M).
@@ -525,6 +558,25 @@ def _render_sprav_block_sum(
         v="center",
         num_fmt=MONEY_FMT,
     )
+
+    if add_state_duty:
+        set_cell(
+            ws,
+            f"J{sprav_start+4}",
+            "госпошлина к оплате",
+            size=13,
+            h="left",
+            v="center",
+        )
+        set_cell(
+            ws,
+            f"M{sprav_start+4}",
+            _state_duty_formula(f"M{sprav_start+1}"),
+            size=13,
+            h="right",
+            v="center",
+            num_fmt="#,##0",
+        )
 
 
 # =============================================================================
@@ -600,6 +652,7 @@ def _render_calc_rows_g_h_k_i(
     contract_number: str,
     category: str,
     include_sprav: bool = True,
+    add_state_duty: bool = False,
 ) -> RenderTail:
     """
     Renders:
@@ -1155,7 +1208,27 @@ def _render_calc_rows_g_h_k_i(
                 num_fmt=MONEY_FMT,
             )
 
-            r = sprav_start + 4
+            if add_state_duty:
+                set_cell(
+                    ws,
+                    f"J{sprav_start+4}",
+                    "госпошлина к оплате",
+                    size=13,
+                    h="left",
+                    v="center",
+                )
+                set_cell(
+                    ws,
+                    f"M{sprav_start+4}",
+                    _state_duty_formula(f"M{sprav_start+1}"),
+                    size=13,
+                    h="right",
+                    v="center",
+                    num_fmt="#,##0",
+                )
+
+            r = sprav_start + (5 if add_state_duty else 4)
+
         else:
             sprav_start = None
 

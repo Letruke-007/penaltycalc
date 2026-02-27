@@ -13,14 +13,19 @@ import { pdfService } from "../services/pdfService";
 import { batchService } from "../services/batchService";
 import { ApiError } from "../api/client";
 
-export type UploadPhase = "idle" | "inspecting" | "ready" | "processing" | "error";
+export type UploadPhase =
+  | "idle"
+  | "inspecting"
+  | "ready"
+  | "processing"
+  | "error";
 
 export interface DraftItem {
   clientFileId: ClientFileId;
   file: File; // IMPORTANT: stable in-memory copy
 
   debtor: DebtorPreview; // filled after inspect (can still be nulls)
- 
+
   // NEW (non-breaking): from /api/pdfs/inspect (scan/no text layer)
   needs_ocr?: boolean;
   inspect_warning?: string | null;
@@ -31,6 +36,7 @@ export interface DraftItem {
     overdue_day: number; // 1..31
     calc_date: DDMMYYYY;
     exclude_zero_debt_periods: boolean;
+    add_state_duty: boolean;
   };
 
   inspectWarnings: string[];
@@ -60,7 +66,10 @@ export interface UseFileUploadActions {
   removeItem: (clientFileId: ClientFileId) => void;
   clearAll: () => void;
 
-  updateItemParams: (clientFileId: ClientFileId, patch: Partial<DraftItem["params"]>) => void;
+  updateItemParams: (
+    clientFileId: ClientFileId,
+    patch: Partial<DraftItem["params"]>,
+  ) => void;
 
   // Row actions for icons
   copyDown: (clientFileId: ClientFileId) => void;
@@ -76,7 +85,10 @@ export interface UseFileUploadActions {
   setMergeXlsx: (value: boolean) => void;
 }
 
-export function useFileUpload(): { state: UseFileUploadState; actions: UseFileUploadActions } {
+export function useFileUpload(): {
+  state: UseFileUploadState;
+  actions: UseFileUploadActions;
+} {
   const [phase, setPhase] = useState<UploadPhase>("idle");
   const [items, setItems] = useState<DraftItem[]>([]);
   const [globalError, setGlobalError] = useState<string | undefined>(undefined);
@@ -88,7 +100,9 @@ export function useFileUpload(): { state: UseFileUploadState; actions: UseFileUp
   const inspectRunIdRef = useRef<number>(0);
 
   const innMismatch = useMemo(() => {
-    const inns = uniqueNonEmpty(items.map((it) => it.debtor.inn ?? "").map(normalizeInn));
+    const inns = uniqueNonEmpty(
+      items.map((it) => it.debtor.inn ?? "").map(normalizeInn),
+    );
     return { hasMismatch: inns.length > 1, inns };
   }, [items]);
 
@@ -131,6 +145,7 @@ export function useFileUpload(): { state: UseFileUploadState; actions: UseFileUp
                 overdue_day: 1,
                 calc_date: todayDDMMYYYY(),
                 exclude_zero_debt_periods: false,
+                add_state_duty: false,
               },
               inspectWarnings: [],
               validationErrors: {},
@@ -165,20 +180,23 @@ export function useFileUpload(): { state: UseFileUploadState; actions: UseFileUp
     setPhase("idle");
   }, []);
 
-  const updateItemParams = useCallback((clientFileId: ClientFileId, patch: Partial<DraftItem["params"]>) => {
-    setItems((prev) =>
-      prev.map((it) => {
-        if (it.clientFileId !== clientFileId) return it;
-        const next: DraftItem = {
-          ...it,
-          params: { ...it.params, ...patch },
-          validationErrors: it.validationErrors,
-        };
-        next.validationErrors = validateDraftItem(next);
-        return next;
-      }),
-    );
-  }, []);
+  const updateItemParams = useCallback(
+    (clientFileId: ClientFileId, patch: Partial<DraftItem["params"]>) => {
+      setItems((prev) =>
+        prev.map((it) => {
+          if (it.clientFileId !== clientFileId) return it;
+          const next: DraftItem = {
+            ...it,
+            params: { ...it.params, ...patch },
+            validationErrors: it.validationErrors,
+          };
+          next.validationErrors = validateDraftItem(next);
+          return next;
+        }),
+      );
+    },
+    [],
+  );
 
   // ===== Row actions (for icons) =====
 
@@ -258,6 +276,7 @@ export function useFileUpload(): { state: UseFileUploadState; actions: UseFileUp
             overdue_day: 1,
             calc_date: "01.01.2025" as DDMMYYYY,
             exclude_zero_debt_periods: false,
+            add_state_duty: false,
           },
           validationErrors: it.validationErrors,
         };
@@ -317,11 +336,14 @@ export function useFileUpload(): { state: UseFileUploadState; actions: UseFileUp
       rate_percent: it.params.rate_percent,
       overdue_day: it.params.overdue_day,
       exclude_zero_debt_periods: it.params.exclude_zero_debt_periods,
+      add_state_duty: it.params.add_state_duty,
     }));
 
     try {
       // IMPORTANT: pass merge flag to backend
-      const resp = await batchService.process(filesSnapshot, metaSnapshot, { merge_xlsx: mergeXlsx });
+      const resp = await batchService.process(filesSnapshot, metaSnapshot, {
+        merge_xlsx: mergeXlsx,
+      });
       setPhase("ready");
       return { batchId: resp.batch_id };
     } catch (e) {
@@ -378,14 +400,17 @@ function isPdfFile(f: File): boolean {
  */
 async function stabilizeFile(src: File): Promise<File> {
   const bytes = await src.arrayBuffer();
-  return new File([bytes], src.name, { type: src.type || "application/pdf", lastModified: src.lastModified });
+  return new File([bytes], src.name, {
+    type: src.type || "application/pdf",
+    lastModified: src.lastModified,
+  });
 }
 
 function createClientFileId(): ClientFileId {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-    return (crypto.randomUUID() as string) as ClientFileId;
+    return crypto.randomUUID() as string as ClientFileId;
   }
-  return (`cf_${Date.now()}_${Math.random().toString(16).slice(2)}` as string) as ClientFileId;
+  return `cf_${Date.now()}_${Math.random().toString(16).slice(2)}` as string as ClientFileId;
 }
 
 function validateDraftItem(it: DraftItem): Record<string, string> {
@@ -393,18 +418,24 @@ function validateDraftItem(it: DraftItem): Record<string, string> {
 
   if (!it.params.category) errs["category"] = "Категория обязательна";
 
-  if (!Number.isFinite(it.params.rate_percent)) errs["rate_percent"] = "Учетная ставка должна быть числом";
-  if (it.params.rate_percent < 0) errs["rate_percent"] = "Учетная ставка не может быть отрицательной";
+  if (!Number.isFinite(it.params.rate_percent))
+    errs["rate_percent"] = "Учетная ставка должна быть числом";
+  if (it.params.rate_percent < 0)
+    errs["rate_percent"] = "Учетная ставка не может быть отрицательной";
 
-  if (!Number.isFinite(it.params.overdue_day)) errs["overdue_day"] = "День начала просрочки должен быть числом";
+  if (!Number.isFinite(it.params.overdue_day))
+    errs["overdue_day"] = "День начала просрочки должен быть числом";
   if (
     Number.isFinite(it.params.overdue_day) &&
-    (!Number.isInteger(it.params.overdue_day) || it.params.overdue_day < 1 || it.params.overdue_day > 31)
+    (!Number.isInteger(it.params.overdue_day) ||
+      it.params.overdue_day < 1 ||
+      it.params.overdue_day > 31)
   ) {
     errs["overdue_day"] = "День начала просрочки: целое число от 1 до 31";
   }
 
-  if (!isDDMMYYYY(it.params.calc_date)) errs["calc_date"] = "Дата расчета: формат ДД.ММ.ГГГГ";
+  if (!isDDMMYYYY(it.params.calc_date))
+    errs["calc_date"] = "Дата расчета: формат ДД.ММ.ГГГГ";
 
   return errs;
 }
@@ -413,7 +444,10 @@ function isDDMMYYYY(v: string): v is DDMMYYYY {
   return /^\d{2}\.\d{2}\.\d{4}$/.test(v);
 }
 
-function applyInspectResponse(prev: DraftItem[], res: InspectResponse): DraftItem[] {
+function applyInspectResponse(
+  prev: DraftItem[],
+  res: InspectResponse,
+): DraftItem[] {
   const prevByName: Map<string, DraftItem[]> = new Map();
   for (const it of prev) {
     const key = it.file.name;

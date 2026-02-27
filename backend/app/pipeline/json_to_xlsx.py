@@ -17,7 +17,9 @@ def _validate_ddmmyyyy(value: str) -> str:
     try:
         datetime.strptime(value, "%d.%m.%Y")
     except ValueError as e:
-        raise SystemExit(f"--calc-date must be in DD.MM.YYYY format, got: {value}") from e
+        raise SystemExit(
+            f"--calc-date must be in DD.MM.YYYY format, got: {value}"
+        ) from e
     return value
 
 
@@ -60,6 +62,7 @@ def build_xlsx_from_statement_json(
     calc_date_override: Optional[str] = None,
     category_override: Optional[str] = None,
     overdue_start_day_override: Optional[int] = None,
+    add_state_duty: bool = False,
 ) -> None:
     """
     JSON (Statement v1.1/v1.2) -> XLSX.
@@ -94,7 +97,7 @@ def build_xlsx_from_statement_json(
     ws.title = "Лист1"
 
     # All rendering (header + table) is done in renderer.py
-    render_statement_sheet(ws, stmt)
+    render_statement_sheet(ws, stmt, add_state_duty=add_state_duty)
 
     out_xlsx_path.parent.mkdir(parents=True, exist_ok=True)
     wb.save(out_xlsx_path)
@@ -103,18 +106,27 @@ def build_xlsx_from_statement_json(
 # --------------------------------------------------------------------
 # Public API expected by ProcessingService: json_to_xlsx(json_path, xlsx_path)
 # --------------------------------------------------------------------
-def json_to_xlsx(json_path: Path, xlsx_path: Path) -> None:
-    """
-    Compatibility wrapper used by app.services.processing_service.ProcessingService.
+def json_to_xlsx(
+    json_path: Path, xlsx_path: Path, *, add_state_duty: bool = False
+) -> None:
+    stmt = Statement.model_validate_json(Path(json_path).read_text(encoding="utf-8"))
 
-    IMPORTANT:
-      - XLSX is generated strictly from JSON.
-      - No JSON mutation on disk.
-    """
-    build_xlsx_from_statement_json(Path(json_path), Path(xlsx_path))
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Лист1"
+
+    render_statement_sheet(ws, stmt, add_state_duty=add_state_duty)
+
+    xlsx_path.parent.mkdir(parents=True, exist_ok=True)
+    wb.save(xlsx_path)
 
 
-def build_xlsx_from_many_statement_jsons(in_json_paths: list[Path], out_xlsx_path: Path) -> None:
+def build_xlsx_from_many_statement_jsons(
+    in_json_paths: list[Path],
+    out_xlsx_path: Path,
+    *,
+    add_state_duty: bool = False,
+) -> None:
     """Build ONE XLSX from multiple Statement JSON files.
 
     Used for merged output (one debtor, several contracts).
@@ -131,7 +143,7 @@ def build_xlsx_from_many_statement_jsons(in_json_paths: list[Path], out_xlsx_pat
     wb = Workbook()
     ws = wb.active
     ws.title = "Лист1"
-    render_statements_sheet(ws, stmts)
+    render_statements_sheet(ws, stmts, add_state_duty=add_state_duty)
 
     out_xlsx_path.parent.mkdir(parents=True, exist_ok=True)
     wb.save(out_xlsx_path)
@@ -172,6 +184,12 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         default=None,
         help="Override statement.overdue_start_day (1..31) over JSON (drives overdue start in next month).",
     )
+    p.add_argument(
+        "--add-state-duty",
+        dest="add_state_duty",
+        action="store_true",
+        help="Add state duty (госпошлина) row in output XLSX (derived from claim price).",
+    )
 
     return p
 
@@ -189,5 +207,6 @@ if __name__ == "__main__":
         calc_date_override=args.calc_date,
         category_override=args.category,
         overdue_start_day_override=args.overdue_start_day,
+        add_state_duty=bool(args.add_state_duty),
     )
     print(f"[OK] XLSX written to {out_xlsx.resolve()}")

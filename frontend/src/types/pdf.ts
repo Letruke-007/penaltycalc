@@ -23,6 +23,7 @@ export interface ItemCalcParams {
   rate_percent: number;
   overdue_day: number; // 1..31
   exclude_zero_debt_periods: boolean;
+  add_state_duty: boolean;
 }
 
 export interface ProcessItemMeta {
@@ -35,13 +36,19 @@ export interface ProcessItemMeta {
   rate_percent: number;
   overdue_day: number;
   exclude_zero_debt_periods: boolean;
+  add_state_duty: boolean;
 }
 
 export interface CreateBatchProcessResponse {
   batch_id: BatchId;
 }
 
-export type BatchItemStatus = "PENDING" | "INSPECTED" | "PROCESSING" | "DONE" | "ERROR";
+export type BatchItemStatus =
+  | "PENDING"
+  | "INSPECTED"
+  | "PROCESSING"
+  | "DONE"
+  | "ERROR";
 export type BatchStatus = "RUNNING" | "DONE" | "ERROR";
 
 export interface BatchItem {

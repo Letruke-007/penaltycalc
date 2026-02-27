@@ -37,6 +37,7 @@ class ItemCalcParams(BaseModel):
     rate_percent: float
     overdue_day: int  # 1..31
     exclude_zero_debt_periods: bool
+    add_state_duty: bool
 
 
 class ProcessItemMeta(BaseModel):
@@ -60,6 +61,7 @@ class ProcessItemMeta(BaseModel):
     rate_percent: float
     overdue_day: int
     exclude_zero_debt_periods: bool
+    add_state_duty: bool
 
 
 class CreateBatchProcessResponse(BaseModel):
@@ -375,6 +377,7 @@ async def process_batch(
                     rate_percent=meta.rate_percent,
                     overdue_day=meta.overdue_day,
                     exclude_zero_debt_periods=meta.exclude_zero_debt_periods,
+                    add_state_duty=meta.add_state_duty,
                 ),
             )
         )
@@ -484,10 +487,15 @@ async def process_batch(
                         rate_percent=item.params.rate_percent,
                         overdue_start_day=item.params.overdue_day,
                         exclude_zero_debt_periods=item.params.exclude_zero_debt_periods,
+                        add_state_duty=item.params.add_state_duty,
                     )
 
                     # per-item XLSX ALWAYS (even in merge mode)
-                    await svc.json_to_xlsx(json_path=json_paths[i], xlsx_path=xlsx_out)
+                    await svc.json_to_xlsx(
+                        json_path=json_paths[i],
+                        xlsx_path=xlsx_out,
+                        add_state_duty=item.params.add_state_duty,
+                    )
 
                     item.status = "DONE"
                     item.json_path = str(json_paths[i].relative_to(svc.data_dir))
@@ -517,12 +525,6 @@ async def process_batch(
                     _recount(batch)
                     _save_batch(bp.batch_json, batch)
                     continue
-
-                await svc.json_to_xlsx(json_path=json_paths[i], xlsx_path=xlsx_out)
-
-                item.status = "DONE"
-                item.json_path = str(json_paths[i].relative_to(svc.data_dir))
-                item.xlsx_path = str(xlsx_out.relative_to(svc.data_dir))
 
                 # diagnostics: update record for this file
                 try:
@@ -581,10 +583,12 @@ async def process_batch(
                 encoding="utf-8",
             )
 
-            await svc.jsons_to_merged_xlsx(json_paths, merged_xlsx)
-
             try:
-                await svc.jsons_to_merged_xlsx(json_paths, merged_xlsx)
+                await svc.jsons_to_merged_xlsx(
+                    json_paths,
+                    merged_xlsx,
+                    add_state_duty=any(it.params.add_state_duty for it in batch.items),
+                )
             except Exception as e:  # noqa: BLE001
                 batch.merge_status = "SKIPPED"
                 batch.merge_warning = "Ошибка формирования объединённого XLSX; сформированы отдельные XLSX по каждой справке"
@@ -642,6 +646,7 @@ async def process_batch(
                         rate_percent=item.params.rate_percent,
                         overdue_start_day=item.params.overdue_day,
                         exclude_zero_debt_periods=item.params.exclude_zero_debt_periods,
+                        add_state_duty=item.params.add_state_duty,
                     )
                 except Exception as e:  # noqa: BLE001
                     # per-item error, continue with next file
