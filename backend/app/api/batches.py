@@ -27,6 +27,7 @@ router = APIRouter(prefix="/batches", tags=["batches"])
 
 # ---- Strict Contracts (NO alias/fallback) ----
 
+
 class ItemCalcParams(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -47,6 +48,7 @@ class ProcessItemMeta(BaseModel):
       - no optional fields
       - extra=forbid
     """
+
     model_config = ConfigDict(extra="forbid")
 
     client_file_id: str = Field(..., min_length=1)
@@ -115,8 +117,8 @@ class Batch(BaseModel):
     merged_manifest_path: Optional[str] = None
 
 
-
 # ---- Batch diagnostics (structured per-file report) ----
+
 
 @dataclass
 class BatchDiagRecord:
@@ -127,7 +129,7 @@ class BatchDiagRecord:
 
     # status
     status: str  # ok | error
-    stage: str   # inspect | pdf_to_json | json_to_xlsx | merged_xlsx | done | error
+    stage: str  # inspect | pdf_to_json | json_to_xlsx | merged_xlsx | done | error
     elapsed_ms: int
 
     # extracted meta (best-effort)
@@ -165,14 +167,29 @@ def _write_diag(batch_dir: Path, records: list[BatchDiagRecord]) -> None:
         "error": sum(1 for r in records if r.status == "error"),
         "records": [r.__dict__ for r in records],
     }
-    json_p.write_text(json.dumps(payload, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+    json_p.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2, default=str), encoding="utf-8"
+    )
 
     # CSV (flat) for quick review
     fieldnames = [
-        "file_name","client_file_id","item_id","status","stage","elapsed_ms",
-        "debtor_inn","debtor_name","months_count","charges_count","payments_count",
-        "pdf_path","inspect_path","json_path","xlsx_path",
-        "error_type","error_message",
+        "file_name",
+        "client_file_id",
+        "item_id",
+        "status",
+        "stage",
+        "elapsed_ms",
+        "debtor_inn",
+        "debtor_name",
+        "months_count",
+        "charges_count",
+        "payments_count",
+        "pdf_path",
+        "inspect_path",
+        "json_path",
+        "xlsx_path",
+        "error_type",
+        "error_message",
     ]
     with csv_p.open("w", encoding="utf-8", newline="") as f:
         w = csv.DictWriter(f, fieldnames=fieldnames)
@@ -183,7 +200,12 @@ def _write_diag(batch_dir: Path, records: list[BatchDiagRecord]) -> None:
 
 
 def _exc_payload(e: BaseException) -> tuple[str, str, str]:
-    return (type(e).__name__, str(e), "".join(traceback.format_exception(type(e), e, e.__traceback__)))
+    return (
+        type(e).__name__,
+        str(e),
+        "".join(traceback.format_exception(type(e), e, e.__traceback__)),
+    )
+
 
 def _user_error_text(e: BaseException) -> str:
     """Короткий человекочитаемый текст для UI."""
@@ -195,7 +217,10 @@ def _user_error_text(e: BaseException) -> str:
         s = s[:4000] + "…"
     return s
 
-def _user_error_payload(e: BaseException) -> tuple[str, Optional[str], Optional[str], Optional[dict[str, Any]]]:
+
+def _user_error_payload(
+    e: BaseException,
+) -> tuple[str, Optional[str], Optional[str], Optional[dict[str, Any]]]:
     """
     Normalize exception to user-facing text + optional structured fields.
     Returns: (message, code, stage, details)
@@ -207,6 +232,7 @@ def _user_error_payload(e: BaseException) -> tuple[str, Optional[str], Optional[
     if len(msg) > 5000:
         msg = msg[:5000] + "…"
     return (msg, None, None, None)
+
 
 @dataclass(frozen=True)
 class BatchPaths:
@@ -267,19 +293,33 @@ def _can_merge_debtors(items: list[BatchItem]) -> tuple[bool, Optional[str]]:
       - else if INN is missing, fallback to normalized name; if 2+ non-empty names and differ -> cannot merge
       - if we cannot establish any comparable key (all empty) -> cannot merge
     """
-    inns = sorted({_normalize_inn(it.debtor.inn) for it in items if _normalize_inn(it.debtor.inn)})
+    inns = sorted(
+        {_normalize_inn(it.debtor.inn) for it in items if _normalize_inn(it.debtor.inn)}
+    )
     if len(inns) >= 2:
         return False, f"Разные ИНН в пакете: {', '.join(inns)}"
     if len(inns) == 1:
         return True, None
 
-    names = sorted({_normalize_name(it.debtor.name) for it in items if _normalize_name(it.debtor.name)})
+    names = sorted(
+        {
+            _normalize_name(it.debtor.name)
+            for it in items
+            if _normalize_name(it.debtor.name)
+        }
+    )
     if len(names) >= 2:
-        return False, "Разные наименования должника в пакете (ИНН отсутствует/не распознан)"
+        return (
+            False,
+            "Разные наименования должника в пакете (ИНН отсутствует/не распознан)",
+        )
     if len(names) == 1:
         return True, None
 
-    return False, "Не удалось определить должника (нет ИНН и наименования) — объединение отключено"
+    return (
+        False,
+        "Не удалось определить должника (нет ИНН и наименования) — объединение отключено",
+    )
 
 
 @router.post("/process", response_model=CreateBatchProcessResponse)
@@ -309,7 +349,9 @@ async def process_batch(
     items: list[BatchItem] = []
     for f in files:
         if not f.filename:
-            raise HTTPException(status_code=422, detail="uploaded file has empty filename")
+            raise HTTPException(
+                status_code=422, detail="uploaded file has empty filename"
+            )
 
         if f.filename not in meta_by_name:
             raise HTTPException(
@@ -380,8 +422,12 @@ async def process_batch(
             _recount(batch)
             _save_batch(bp.batch_json, batch)
 
-            ir = svc.ensure_inspect(pdf_path=pdf_path, inspect_path=inspect_path, force=True)
-            item.debtor = DebtorPreview(name=(ir.debtor_name or None), inn=(ir.debtor_inn or None))
+            ir = svc.ensure_inspect(
+                pdf_path=pdf_path, inspect_path=inspect_path, force=True
+            )
+            item.debtor = DebtorPreview(
+                name=(ir.debtor_name or None), inn=(ir.debtor_inn or None)
+            )
             _save_batch(bp.batch_json, batch)
 
             rec = BatchDiagRecord(
@@ -407,7 +453,9 @@ async def process_batch(
             can_merge, reason = _can_merge_debtors(batch.items)
             if not can_merge:
                 batch.merge_status = "SKIPPED"
-                batch.merge_warning = (reason or "Объединение невозможно") + "; сформированы отдельные XLSX по каждой справке"
+                batch.merge_warning = (
+                    reason or "Объединение невозможно"
+                ) + "; сформированы отдельные XLSX по каждой справке"
                 do_merge = False
 
         # -------------------------------------------------
@@ -447,9 +495,13 @@ async def process_batch(
 
                 except Exception as e:  # noqa: BLE001
                     # per-item error; continue processing next files
-                    msg = _user_error_text(e)
+                    msg, code, stage, details = _user_error_payload(e)
+
                     item.status = "ERROR"
                     item.error = msg
+                    item.error_code = code
+                    item.error_stage = stage
+                    item.error_details = details
 
                     err_type, _, err_tb = _exc_payload(e)
                     for r in diag_records:
@@ -467,18 +519,26 @@ async def process_batch(
                     continue
 
                 await svc.json_to_xlsx(json_path=json_paths[i], xlsx_path=xlsx_out)
-                
+
                 item.status = "DONE"
                 item.json_path = str(json_paths[i].relative_to(svc.data_dir))
                 item.xlsx_path = str(xlsx_out.relative_to(svc.data_dir))
-                
+
                 # diagnostics: update record for this file
                 try:
                     # best-effort counts from produced JSON
                     js = json.loads(json_paths[i].read_text(encoding="utf-8"))
-                    charges_count = len(js.get("statement", {}).get("charges", []) or [])
-                    payments_count = len(js.get("statement", {}).get("payments", []) or [])
-                    months = {c.get("period") for c in (js.get("statement", {}).get("charges", []) or []) if c.get("period")}
+                    charges_count = len(
+                        js.get("statement", {}).get("charges", []) or []
+                    )
+                    payments_count = len(
+                        js.get("statement", {}).get("payments", []) or []
+                    )
+                    months = {
+                        c.get("period")
+                        for c in (js.get("statement", {}).get("charges", []) or [])
+                        if c.get("period")
+                    }
                     months_count = len(months)
                 except Exception:  # noqa: BLE001
                     charges_count = payments_count = months_count = None
@@ -488,7 +548,7 @@ async def process_batch(
                         r.status = "ok"
                         r.stage = "json_to_xlsx"
                         r.elapsed_ms = int((time.perf_counter() - t0) * 1000)
-                        r.xlsx_path = str(xlsx_out.relative_to(svc.data_dir))                        
+                        r.xlsx_path = str(xlsx_out.relative_to(svc.data_dir))
                         r.charges_count = charges_count
                         r.payments_count = payments_count
                         r.months_count = months_count
@@ -585,9 +645,13 @@ async def process_batch(
                     )
                 except Exception as e:  # noqa: BLE001
                     # per-item error, continue with next file
-                    msg = _user_error_text(e)
+                    msg, code, stage, details = _user_error_payload(e)
+
                     item.status = "ERROR"
                     item.error = msg
+                    item.error_code = code
+                    item.error_stage = stage
+                    item.error_details = details
 
                     err_type, err_msg, err_tb = _exc_payload(e)
                     # update diagnostics record for this item
@@ -608,9 +672,17 @@ async def process_batch(
                 # diagnostics: update record for this file (best-effort counts from produced JSON)
                 try:
                     js = json.loads(json_out.read_text(encoding="utf-8"))
-                    charges_count = len(js.get("statement", {}).get("charges", []) or [])
-                    payments_count = len(js.get("statement", {}).get("payments", []) or [])
-                    months = {c.get("period") for c in (js.get("statement", {}).get("charges", []) or []) if c.get("period")}
+                    charges_count = len(
+                        js.get("statement", {}).get("charges", []) or []
+                    )
+                    payments_count = len(
+                        js.get("statement", {}).get("payments", []) or []
+                    )
+                    months = {
+                        c.get("period")
+                        for c in (js.get("statement", {}).get("charges", []) or [])
+                        if c.get("period")
+                    }
                     months_count = len(months)
                 except Exception:  # noqa: BLE001
                     charges_count = payments_count = months_count = None
@@ -632,7 +704,17 @@ async def process_batch(
                         debtor_name=item.debtor.name,
                         debtor_inn=item.debtor.inn,
                         pdf_path=str(pdf_path.relative_to(svc.data_dir)),
-                        inspect_path=str((bp.batch_dir / f"{item.file_name}.inspect.json").relative_to(svc.data_dir)) if (bp.batch_dir / f"{item.file_name}.inspect.json").exists() else None,
+                        inspect_path=(
+                            str(
+                                (
+                                    bp.batch_dir / f"{item.file_name}.inspect.json"
+                                ).relative_to(svc.data_dir)
+                            )
+                            if (
+                                bp.batch_dir / f"{item.file_name}.inspect.json"
+                            ).exists()
+                            else None
+                        ),
                     )
                     diag_records.append(rec)
 
@@ -640,7 +722,9 @@ async def process_batch(
                 rec.stage = "json_to_xlsx"
                 rec.elapsed_ms = int((time.perf_counter() - t0) * 1000)
                 rec.json_path = str(json_out.relative_to(svc.data_dir))
-                rec.xlsx_path = str((bp.batch_dir / f"{item.file_name}.xlsx").relative_to(svc.data_dir))
+                rec.xlsx_path = str(
+                    (bp.batch_dir / f"{item.file_name}.xlsx").relative_to(svc.data_dir)
+                )
                 rec.charges_count = charges_count
                 rec.payments_count = payments_count
                 rec.months_count = months_count
@@ -663,7 +747,7 @@ async def process_batch(
     except (ProcessingError, Exception) as e:  # noqa: BLE001
         logger.exception("Batch processing failed: %s", e)
         user_msg, user_code, user_stage, user_details = _user_error_payload(e)
-        
+
         # diagnostics: mark the first non-done item as error
         err_type, err_msg, err_tb = _exc_payload(e)
         for it in batch.items:
@@ -762,7 +846,6 @@ async def download_batch_xlsx(batch_id: str) -> Any:
     except Exception:
         out_name = "merged.xlsx"
 
-
     return FileResponse(
         path=str(xlsx_path),
         filename=out_name,
@@ -810,7 +893,6 @@ async def download_batch_pdf(batch_id: str) -> Any:
         )
     except Exception:
         out_name = "merged.pdf"
-
 
     return FileResponse(
         path=str(pdf_path),
